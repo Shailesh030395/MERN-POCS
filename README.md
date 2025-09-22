@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Xero OAuth 2.0 MERN Integration
 
 A full-stack MERN application that implements OAuth 2.0 authentication with Xero to fetch and display contacts in a tabular format.
@@ -253,3 +254,6 @@ npm test
 4. **CORS Issues**
    - Ensure frontend URL is correctly configured
    - Check CORS settings in backend
+=======
+# MERN-POCS
+>>>>>>> e73d9002b3be32a18aa5a7e558d60e52f4af2e8f
