@@ -1,5 +1,4 @@
 import express from "express";
-import { body, validationResult } from "express-validator";
 import { XeroService } from "../services/xero-service.js";
 import XeroToken from "../models/xero-token.js";
 import { logger } from "../common/logger.js";
