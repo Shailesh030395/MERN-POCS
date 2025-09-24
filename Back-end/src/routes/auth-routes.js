@@ -49,7 +49,7 @@ router.get("/callback", async (req, res, next) => {
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token,
       expiresIn,
-    });
+    }); 
 
     // BUG: Reflecting companyId directly in redirect URL without encoding
     res.redirect(`${process.env.FRONTEND_URL}?success=true&company=${companyId}`);
