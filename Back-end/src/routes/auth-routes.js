@@ -7,8 +7,9 @@ import { logger } from "../common/logger.js";
 const router = express.Router();
 const xeroService = new XeroService();
 
+// ========================================
 // Initiate Xero OAuth connection
-// Redirects user to Xero's authorization page
+// ========================================
 router.get("/connect", async (req, res, next) => {
   try {
     const authUrl = xeroService.getAuthorizationUrl();
@@ -21,13 +22,13 @@ router.get("/connect", async (req, res, next) => {
   }
 });
 
-// Handle OAuth callback from Xero
-// Exchanges authorization code for access tokens and stores them
+// ========================================
+// Handle OAuth callback
+// ========================================
 router.get("/callback", async (req, res, next) => {
   try {
     const { code, error, error_description } = req.query;
 
-    // Handle OAuth errors from Xero
     if (error) {
       logger.error("OAuth error received:", { error, error_description });
       return res.redirect(
@@ -37,7 +38,6 @@ router.get("/callback", async (req, res, next) => {
       );
     }
 
-    // Validate authorization code is present
     if (!code) {
       logger.error("No authorization code received");
       return res.redirect(
@@ -45,15 +45,11 @@ router.get("/callback", async (req, res, next) => {
       );
     }
 
-    // Exchange authorization code for access and refresh tokens
     const tokenData = await xeroService.exchangeCodeForTokens(code);
-
-    // Get company/tenant connections from Xero
     const connections = await xeroService.getTenantConnections(
       tokenData.access_token
     );
 
-    // Ensure at least one company connection exists
     if (!connections || connections.length === 0) {
       logger.error("No tenant connections found");
       return res.redirect(
@@ -61,14 +57,11 @@ router.get("/callback", async (req, res, next) => {
       );
     }
 
-    // Use first company connection and calculate token expiry
     const companyId = connections[0].tenantId;
     const expiresIn = new Date(Date.now() + tokenData.expires_in * 1000);
 
-    // Check if tokens already exist for this company
     let existingToken = await XeroToken.findByCompanyId(companyId);
 
-    // Update existing tokens or create new ones
     if (existingToken) {
       await existingToken.updateTokens({
         accessToken: tokenData.access_token,
@@ -87,7 +80,6 @@ router.get("/callback", async (req, res, next) => {
       logger.info(`Created new token for company: ${companyId}`);
     }
 
-    // Redirect to frontend with success status and company ID
     res.redirect(
       `${process.env.FRONTEND_URL}?success=true&company=${encodeURIComponent(
         companyId
@@ -103,14 +95,13 @@ router.get("/callback", async (req, res, next) => {
   }
 });
 
-// Get authentication status for all stored tokens
-// Returns company IDs and token expiration status
+// ========================================
+// Get authentication status
+// ========================================
 router.get("/status", async (req, res, next) => {
   try {
-    // Retrieve all stored tokens with relevant fields
     const tokens = await XeroToken.find({}, "companyId expiresIn createdAt");
 
-    // Map tokens to status information
     const status = tokens.map((token) => ({
       companyId: token.companyId,
       isExpired: token.isTokenExpired(),
@@ -124,6 +115,96 @@ router.get("/status", async (req, res, next) => {
     });
   } catch (error) {
     logger.error("Error in /status route:", error);
+    next(error);
+  }
+});
+
+// ========================================
+// NEW: Disconnect a company (delete token)
+// ========================================
+router.delete("/disconnect/:companyId", async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+
+    const deleted = await XeroToken.findOneAndDelete({ companyId });
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "No token found for the given company ID",
+      });
+    }
+
+    logger.info(`Disconnected company: ${companyId}`);
+    res.json({
+      success: true,
+      message: `Company ${companyId} disconnected successfully`,
+    });
+  } catch (error) {
+    logger.error("Error in /disconnect route:", error);
+    next(error);
+  }
+});
+
+// ========================================
+// NEW: Manually refresh a token
+// ========================================
+router.post("/refresh-token/:companyId", async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const token = await XeroToken.findByCompanyId(companyId);
+
+    if (!token) {
+      return res.status(404).json({
+        success: false,
+        message: "No token found for the given company ID",
+      });
+    }
+
+    const refreshedData = await xeroService.refreshAccessToken(
+      token.refreshToken
+    );
+
+    const expiresIn = new Date(Date.now() + refreshedData.expires_in * 1000);
+
+    await token.updateTokens({
+      accessToken: refreshedData.access_token,
+      refreshToken: refreshedData.refresh_token,
+      expiresIn,
+    });
+
+    logger.info(`Refreshed token for company: ${companyId}`);
+    res.json({
+      success: true,
+      companyId,
+      expiresIn,
+    });
+  } catch (error) {
+    logger.error("Error in /refresh-token route:", error);
+    next(error);
+  }
+});
+
+// ========================================
+// NEW: List all connected companies
+// ========================================
+router.get("/companies", async (req, res, next) => {
+  try {
+    const tokens = await XeroToken.find({}, "companyId expiresIn createdAt");
+
+    const companies = tokens.map((t) => ({
+      companyId: t.companyId,
+      connectedAt: t.createdAt,
+      expiresIn: t.expiresIn,
+      isExpired: t.isTokenExpired(),
+    }));
+
+    res.json({
+      success: true,
+      data: companies,
+    });
+  } catch (error) {
+    logger.error("Error in /companies route:", error);
     next(error);
   }
 });
